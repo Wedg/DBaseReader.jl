@@ -8,33 +8,14 @@ using DataFrames
 
 export readdbf, readdbfheader, DBFHeader
 
-function hextoint(ary::AbstractArray)
-  res = 0
-  for (p, bt) in enumerate(ary)
-    res += 256^(p-1) * Int(ary[p])
-  end
-  return res
-end
 
-
-function isterm(f)
-  t = readbytes(f, 1)
-  t == [0x0d] && return true  # eat the terminator!
-  skip(f, -1)
-  return false
-end
-
-
-function hextostring(ary)
-  # We know the chars must be ASCII only.
-  # We also know strings are null-terminated in these files, so we
-  # can find the termination to eliminate unnecessary conversions.
-  # The findfirst code is faster than strip(..., Char(0x00))
+function bytestostring(ary)
+  # findfirst plus sub-indexing is faster than rstrip(..., ['\0']])
   iend = (findfirst(ary, 0x00)-1)
   if iend > 0
-    return strip(ASCIIString(ary[1:iend]))
+    return rstrip(ASCIIString(ary[1:iend]))
   else
-    return strip(ASCIIString(ary))
+    return rstrip(ASCIIString(ary))
   end
 end
 
@@ -49,54 +30,63 @@ end
 
 
 # References [1] and [2] disagree about the lengths and meanings of bytes
-# after offset 17. We just stick it all into the "rest" field although
-# none of those bytes matter for dbfs associated with shapefiles.
+# after offset 17. We just stick it all into the "rest" field.
 function readfieldinfo(f)
-  return DBFFieldInfo(                      # Byte offset
-    Symbol(hextostring(readbytes(f, 11))),  # 0-10
-    Char(readbytes(f, 1)[1]),               # 11
-    hextoint(readbytes(f, 4)),              # 12-15
-    hextoint(readbytes(f, 1)),              # 16
-    hextoint(readbytes(f, 1)),              # 17
-    readbytes(f, 14))                       # 18-31
+  return DBFFieldInfo(                        # Byte offset
+    Symbol(bytestostring(readbytes(f, 11))),  # 0-10
+    Char(readbytes(f, 1)[1]),                 # 11
+    read(f, Int32),                           # 12-15
+    read(f, Int8),                            # 16
+    read(f, Int8),                            # 17
+    readbytes(f, 14))                         # 18-31
 end
 
 
-function parserecord!(col, datum, typ, decimalplaces)
-  if typ == 'C'
-    push!(col, hextostring(datum))
-
-  elseif typ == 'N'
-    if decimalplaces == 0
-      push!(col, parse(Int64, hextostring(datum)))
+function store!(col, datum, typ, decimalplaces)
+  try
+    if typ == 'C'
+      push!(col, bytestostring(datum))
+    elseif typ == 'N'
+      if decimalplaces == 0
+        push!(col, parse(Int64, bytestostring(datum)))
+      else
+        push!(col, parse(Float64, bytestostring(datum)))
+      end
+    elseif typ == 'D' # Date in YYYYMMDD byte format
+      push!(col, Date(Int64(datum[1:4]), Int64(datum[5:6]), Int64(datum[7:8])))
+    elseif typ == 'L' # Character boolean
+      if datum in "TtYy"
+        push!(col, true)
+      elseif datum in "FfNn"
+        push!(col, false)
+      else
+        push!(col, NA)
+      end
     else
-      push!(col, parse(Float64, hextostring(datum)))
+      push!(col, NA)
     end
+  catch # If a conversion failed, call it an NA and move on.
+    push!(col, NA)
   end
-
   return nothing
 end
 
 
 function parserecords!(cols, chunk, info, recordlength)
   coloffset = 0
-
-  # Iterate over columns
+  # Iterate column-wise. Yields better performance than row-wise.
   for inf in info
     col = cols[inf.name]
     istart = coloffset + 2
-    rows = length(chunk) / recordlength
-
+    records = length(chunk) / recordlength
     iend = 0
-    # Iterate over rows
-    for x in 1:rows
+    for x in 1:records
       iend = istart + inf.bytesize - 1
-      parserecord!(col, chunk[istart:iend], inf.kind, inf.decimalplaces)
+      store!(col, chunk[istart:iend], inf.kind, inf.decimalplaces)
       istart += recordlength
     end
     coloffset += inf.bytesize
   end
-
   return nothing
 end
 
@@ -105,20 +95,32 @@ function stubcolumns(info)
   cols = Dict()
   for inf in info
     if inf.kind == 'C'
-      cols[inf.name] = DataArray(Array(UTF8String, 0),
-                                Array(Bool, 0))
+      cols[inf.name] = DataArray(UTF8String[], Bool[])
+    elseif inf.kind == 'D'
+      cols[inf.name] = DataArray(Date[], Bool[])
+    elseif inf.kind == 'L'
+      cols[inf.name] = DataArray(Bool[], Bool[])
     elseif inf.kind == 'N' && inf.decimalplaces == 0
-      cols[inf.name] = DataArray(Array(Int64, 0),
-                                Array(Bool, 0))
+      cols[inf.name] = DataArray(Int64[], Bool[])
     elseif inf.kind == 'N' && inf.decimalplaces != 0
-      cols[inf.name] = DataArray(Array(Float64, 0),
-                                Array(Bool, 0))
+      cols[inf.name] = DataArray(Float64[], Bool[])
+    else
+      warn("Unsupported column type $(inf.kind); will fill with NA's")
+      cols[inf.name] = DataArray(Bool[], Bool[])
     end
   end
   return cols
 end
 
 
+"""
+`DBFHeader`
+
+All the information you ever expected to get out of a dBase header.
+Fields are: `dbasetype`, `yearmodified`, `monthmodified`, `daymodified`,
+`numrecords`, `firstrecordoffset`, `recordlength`, `reservedspace`,
+`tableflags`, `codepagemark`, `reservedzeroes`.
+"""
 type DBFHeader
   dbasetype::UInt8
   yearmodified::Int64
@@ -135,18 +137,24 @@ end
 DBFHeader() = DBFHeader(0x00,0,0,0,0,0,0,UInt8[],0x00,0x00,UInt8[])
 
 
+"""
+`readdbfheader(path::AbstractString)`
+
+Reads the header from a dBase file and returns a `DBFHeader` object.
+`path` specifies the desired .dbf file, and must include the file extension.
+"""
 function readdbfheader(path::AbstractString)
   f = open(path)
 
   h = DBFHeader()
                                                       # Byte offset
   h.dbasetype = readbytes(f, 1)[1]                    # 0
-  h.yearmodified = 1900 + hextoint(readbytes(f, 1))   # 1
-  h.monthmodified = hextoint(readbytes(f, 1))         # 2
-  h.daymodified = hextoint(readbytes(f, 1))           # 3
-  h.numrecords = hextoint(readbytes(f, 4))            # 4-7
-  h.firstrecordoffset = hextoint(readbytes(f, 2))     # 8-9
-  h.recordlength = hextoint(readbytes(f, 2))          # 10-11
+  h.yearmodified = 1900 + read(f, Int8)               # 1
+  h.monthmodified = read(f, Int8)                     # 2
+  h.daymodified = read(f, Int8)                       # 3
+  h.numrecords = read(f, Int32)                       # 4-7
+  h.firstrecordoffset = read(f, Int16)                # 8-9
+  h.recordlength = read(f, Int16)                     # 10-11
   h.reservedspace = readbytes(f, 16)                  # 12-27
   h.tableflags = readbytes(f, 1)[1]                   # 28
   h.codepagemark = readbytes(f, 1)[1]                 # 29
@@ -158,7 +166,14 @@ function readdbfheader(path::AbstractString)
 end
 
 
-function readdbf(path::AbstractString, maxbytes::Int64=1000000)
+"""
+`readdbf(path::AbstractString, maxbytes::Int64=10000000)`
+
+Reads a dBase file into a new `DataFrame`. `path` specifies the desired file,
+and must include the file extension. `maxbytes` is optional, and specifies
+the maximum number of bytes to read from the file at once.
+"""
+function readdbf(path::AbstractString, maxbytes::Int64=10000000)
   header = readdbfheader(path)
 
   f = open(path)
@@ -167,12 +182,19 @@ function readdbf(path::AbstractString, maxbytes::Int64=1000000)
   skip(f, 32)
 
   info = []
-  while !isterm(f)
+  for x in 1:((header.firstrecordoffset - 33) // 32)
     push!(info, readfieldinfo(f))
   end
+  readbytes(f, 1) # eat the terminator
 
   cols = stubcolumns(info)
 
+  # Add data column-wise rather than row-wise because the looping
+  # is around 30% faster doing it column-wise. However, this entails skipping
+  # the read cursor around in the file rather than incrementing through the
+  # file byte-by-byte. For sufficiently large files stored on a magnetic drive,
+  # this could be problematic. To avoid this, read the file in contiguous
+  # chunks, stepping column-wise through each chunk.
   chunking = div(maxbytes, header.recordlength)
   chunks, extra = divrem(header.numrecords, chunking)
 
