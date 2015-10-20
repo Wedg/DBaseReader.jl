@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/penntaylor/DBaseReader.jl.svg?branch=master)](https://travis-ci.org/penntaylor/DBaseReader.jl)
+
 # DBaseReader
 
 Reads a .dbf file into a `DataFrame`.
