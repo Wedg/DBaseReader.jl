@@ -11,6 +11,7 @@ df = readdbf(filename)
 @test typeof(df[1,6]) == Int64 && df[1,6] == 419356559348
 @test names(df) == [:REGIONCE,:AFFGEOID,:GEOID,:NAME,:LSAD,:ALAND,:AWATER]
 
+
 # QGIS 2.10 - generated dbf containing both a Date-type field
 # and a Real Numeric field
 filename = "$data/test.dbf"
