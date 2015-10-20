@@ -42,7 +42,7 @@ function readfieldinfo(f)
 end
 
 
-function store!(col, datum, typ, decimalplaces)
+function store!(col, datum, typ, decimalplaces, name)
   try
     if typ == 'C'
       push!(col, bytestostring(datum))
@@ -52,8 +52,15 @@ function store!(col, datum, typ, decimalplaces)
       else
         push!(col, parse(Float64, bytestostring(datum)))
       end
-    elseif typ == 'D' # Date in YYYYMMDD byte format
-      push!(col, Date(Int64(datum[1:4]), Int64(datum[5:6]), Int64(datum[7:8])))
+    elseif typ == 'D' # Date in YYYYMMDD character format
+      yyyy = parse(Int64, bytestostring(datum[1:4]))
+      mm = parse(Int64, bytestostring(datum[5:6]))
+      dd = parse(Int64, bytestostring(datum[7:8]))
+      if yyyy == 0 || mm == 0 || dd == 0
+        push!(col, NA)
+      else
+        push!(col, Date(yyyy, mm, dd))
+      end
     elseif typ == 'L' # Character boolean
       if datum in "TtYy"
         push!(col, true)
@@ -66,6 +73,7 @@ function store!(col, datum, typ, decimalplaces)
       push!(col, NA)
     end
   catch # If a conversion failed, call it an NA and move on.
+    warn("Failed to convert '$typ' value in column $name")
     push!(col, NA)
   end
   return nothing
@@ -76,13 +84,14 @@ function parserecords!(cols, chunk, info, recordlength)
   coloffset = 0
   # Iterate column-wise. Yields better performance than row-wise.
   for inf in info
-    col = cols[inf.name]
+    name = inf.name
+    col = cols[name]
     istart = coloffset + 2
     records = length(chunk) / recordlength
     iend = 0
     for x in 1:records
       iend = istart + inf.bytesize - 1
-      store!(col, chunk[istart:iend], inf.kind, inf.decimalplaces)
+      store!(col, chunk[istart:iend], inf.kind, inf.decimalplaces, name)
       istart += recordlength
     end
     coloffset += inf.bytesize
