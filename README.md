@@ -2,18 +2,18 @@
 
 # DBaseReader
 
-Reads a .dbf file into a `DataFrame`.
+Reads a .dbf file into a Dict of DataArrays.
 
-Written in pure Julia; only package dependency is DataFrames. File import
+Written in pure Julia; only package dependency is DataArrays. File import
 speed is roughly on par with the DataFrames package's `readtable` function
-applied to an equivalent csv, as long as there are no Date fields in the file.
+applied to an equivalent csv.
 
 Example Use
 -----------
 
     using DBaseReader
 
-    df = readdbf("path/to/file.dbf")
+    d = readdbf("path/to/file.dbf")
 
 Known Issues
 ------------

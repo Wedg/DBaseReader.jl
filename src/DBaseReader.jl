@@ -4,7 +4,7 @@ module DBaseReader
 # [1] http://www.dbf2002.com/dbf-file-format.html
 # [2] http://www.clicketyclick.dk/databases/xbase/format/dbf.html#DBF_NOTE_1_TARGET
 
-using DataFrames
+using DataArrays
 
 export readdbf, readdbfheader, DBFHeader
 
@@ -178,8 +178,9 @@ end
 """
 `readdbf(path::AbstractString, maxbytes::Int64=10000000)`
 
-Reads a dBase file into a new `DataFrame`. `path` specifies the desired file,
-and must include the file extension. `maxbytes` is optional, and specifies
+Reads a dBase file into a `Dict` containing `Symbol`s as keys, and
+`DataArray`s as values. `path` specifies the desired file, and must
+include the file extension. `maxbytes` is optional, and specifies
 the maximum number of bytes to read from the file at once.
 """
 function readdbf(path::AbstractString, maxbytes::Int64=10000000)
@@ -214,7 +215,7 @@ function readdbf(path::AbstractString, maxbytes::Int64=10000000)
   extra != 0 && parserecords!(cols, readbytes(f, extra * header.recordlength),
                               info, header.recordlength)
 
-  df = DataFrame()
+  df = Dict()
 
   # Ensure cols are added to DataFrame in same order they appear in .dbf:
   for inf in info
