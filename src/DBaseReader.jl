@@ -32,13 +32,16 @@ end
 # References [1] and [2] disagree about the lengths and meanings of bytes
 # after offset 17. We just stick it all into the "rest" field.
 function readfieldinfo(f)
-  return DBFFieldInfo(                        # Byte offset
+  info = DBFFieldInfo(                        # Byte offset
     Symbol(bytestostring(readbytes(f, 11))),  # 0-10
     Char(readbytes(f, 1)[1]),                 # 11
     read(f, Int32),                           # 12-15
     read(f, Int8),                            # 16
     read(f, Int8),                            # 17
     readbytes(f, 14))                         # 18-31
+  # FoxPro 'F' is same as 'N'
+  if info.kind == 'F'; info.kind = 'N' end
+  return info
 end
 
 
@@ -199,12 +202,10 @@ function readdbf(path::AbstractString, maxbytes::Int64=10000000)
 
   cols = stubcolumns(info)
 
-  # Add data column-wise rather than row-wise because the looping
-  # is around 30% faster doing it column-wise. However, this entails skipping
-  # the read cursor around in the file rather than incrementing through the
-  # file byte-by-byte. For sufficiently large files stored on a magnetic drive,
-  # this could be problematic. To avoid this, read the file in contiguous
-  # chunks, stepping column-wise through each chunk.
+  # Add data column-wise rather than row-wise because the looping is
+  # significantly faster. To avoid issues with streams that can't
+  # (or shouldn't) be read all at once, read the stream in contiguous chunks,
+  # stepping column-wise through each chunk.
   chunking = div(maxbytes, header.recordlength)
   chunks, extra = divrem(header.numrecords, chunking)
 
@@ -215,16 +216,15 @@ function readdbf(path::AbstractString, maxbytes::Int64=10000000)
   extra != 0 && parserecords!(cols, readbytes(f, extra * header.recordlength),
                               info, header.recordlength)
 
-  df = Dict()
+  d = Dict()
 
-  # Ensure cols are added to DataFrame in same order they appear in .dbf:
-  for inf in info
-    df[inf.name] = cols[inf.name]
+  for (name, col) in cols
+    d[name] = col
   end
 
   close(f)
 
-  return df
+  return d
 end
 
 end # module
