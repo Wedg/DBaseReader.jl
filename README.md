@@ -24,7 +24,7 @@ Known Issues
   be some quirks of data termination in those files, but I don't have any
   specimens.
 * Does not respect the delete flag that may be present on a record.
-  Right now, if it appears in the file, it shows up in your DataFrame.
+  Right now, if it appears in the file, it shows up in the returned data.
 * Does not attempt to detect ESRI's signal value(s) for "no data": < -10^38
   (Unclear from https://www.esri.com/library/whitepapers/pdfs/shapefile.pdf
   whether this signal value applies to all pieces of a shapefile, or only
