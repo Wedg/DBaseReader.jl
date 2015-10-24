@@ -3,6 +3,7 @@ using Base.Test
 
 data = joinpath(dirname(@__FILE__), "data")
 
+# Basic tests
 filename = "$data/cb_2014_us_region_20m.dbf"
 d = readdbf(filename)
 @test length(d) == 7
@@ -18,6 +19,12 @@ filename = "$data/test.dbf"
 d = readdbf(filename)
 @test d[:ADate][2] == Date(1927, 10, 15)
 @test typeof(d[:AReal][2]) == Float64 && d[:AReal][2] == 6.62607
+
+
+# Test FoxPro 'F' type
+filename = "$data/taz_small.dbf"
+d = readdbf(filename)
+@test d[:TAZ2K][1] == 501030005
 
 
 # TODO: test for
