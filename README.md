@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/penntaylor/DBaseReader.jl.svg?branch=master)](https://travis-ci.org/penntaylor/DBaseReader.jl)
+[![Build Status](https://travis-ci.org/penntaylor/DBaseReader.jl.svg?branch=master)](https://travis-ci.org/penntaylor/DBaseReader.jl)julia v0.6
 
 # DBaseReader
 

@@ -8,7 +8,7 @@ filename = "$data/cb_2014_us_region_20m.dbf"
 d = readdbf(filename)
 @test length(d) == 7
 @test length(d[:NAME]) == 4
-@test typeof(d[:NAME][1]) == UTF8String && d[:NAME][1] == "Northeast"
+@test typeof(d[:NAME][1]) == String && d[:NAME][1] == "Northeast"
 @test typeof(d[:ALAND][1]) == Int64 && d[:ALAND][1] == 419356559348
 @test Set(collect(keys(d))) == Set([:REGIONCE,:AFFGEOID,:GEOID,:NAME,:LSAD,:ALAND,:AWATER])
 

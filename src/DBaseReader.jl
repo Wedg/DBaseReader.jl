@@ -8,18 +8,17 @@ using DataArrays
 
 export readdbf, readdbfheader, DBFHeader
 
-
 function bytestostring(ary)
   # findfirst plus sub-indexing is faster than rstrip(..., ['\0']])
   iend = (findfirst(ary, 0x00)-1)
   if iend > 0
-    return rstrip(ASCIIString(ary[1:iend]))
+    return rstrip(String(ary[1:iend]))
   else
-    return rstrip(ASCIIString(ary))
+    return rstrip(String(ary))
   end
 end
 
-type DBFFieldInfo
+mutable struct DBFFieldInfo
   name::Symbol
   kind::Char
   displacement::Int64
@@ -33,12 +32,12 @@ end
 # after offset 17. We just stick it all into the "rest" field.
 function readfieldinfo(f)
   info = DBFFieldInfo(                        # Byte offset
-    Symbol(bytestostring(readbytes(f, 11))),  # 0-10
-    Char(readbytes(f, 1)[1]),                 # 11
+    Symbol(bytestostring(read(f, 11))),  # 0-10
+    Char(read(f, 1)[1]),                 # 11
     read(f, Int32),                           # 12-15
     read(f, Int8),                            # 16
     read(f, Int8),                            # 17
-    readbytes(f, 14))                         # 18-31
+    read(f, 14))                         # 18-31
   # FoxPro 'F' is same as 'N'
   if info.kind == 'F'; info.kind = 'N' end
   return info
@@ -107,7 +106,7 @@ function stubcolumns(info)
   cols = Dict()
   for inf in info
     if inf.kind == 'C'
-      cols[inf.name] = DataArray(UTF8String[], Bool[])
+      cols[inf.name] = DataArray(String[], Bool[])
     elseif inf.kind == 'D'
       cols[inf.name] = DataArray(Date[], Bool[])
     elseif inf.kind == 'L'
@@ -133,7 +132,7 @@ Fields are: `dbasetype`, `yearmodified`, `monthmodified`, `daymodified`,
 `numrecords`, `firstrecordoffset`, `recordlength`, `reservedspace`,
 `tableflags`, `codepagemark`, `reservedzeroes`.
 """
-type DBFHeader
+mutable struct DBFHeader
   dbasetype::UInt8
   yearmodified::Int64
   monthmodified::Int64
@@ -160,17 +159,17 @@ function readdbfheader(path::AbstractString)
 
   h = DBFHeader()
                                                       # Byte offset
-  h.dbasetype = readbytes(f, 1)[1]                    # 0
+  h.dbasetype = read(f, 1)[1]                         # 0
   h.yearmodified = 1900 + read(f, Int8)               # 1
   h.monthmodified = read(f, Int8)                     # 2
   h.daymodified = read(f, Int8)                       # 3
   h.numrecords = read(f, Int32)                       # 4-7
   h.firstrecordoffset = read(f, Int16)                # 8-9
   h.recordlength = read(f, Int16)                     # 10-11
-  h.reservedspace = readbytes(f, 16)                  # 12-27
-  h.tableflags = readbytes(f, 1)[1]                   # 28
-  h.codepagemark = readbytes(f, 1)[1]                 # 29
-  h.reservedzeroes = readbytes(f, 2)                  # 30-31
+  h.reservedspace = read(f, 16)                       # 12-27
+  h.tableflags = read(f, 1)[1]                        # 28
+  h.codepagemark = read(f, 1)[1]                      # 29
+  h.reservedzeroes = read(f, 2)                       # 30-31
 
   close(f)
 
@@ -198,7 +197,7 @@ function readdbf(path::AbstractString, maxbytes::Int64=10000000)
   for x in 1:((header.firstrecordoffset - 33) // 32)
     push!(info, readfieldinfo(f))
   end
-  readbytes(f, 1) # eat the terminator
+  read(f, 1) # eat the terminator
 
   cols = stubcolumns(info)
 
@@ -210,10 +209,10 @@ function readdbf(path::AbstractString, maxbytes::Int64=10000000)
   chunks, extra = divrem(header.numrecords, chunking)
 
   for x in 1:chunks
-    parserecords!(cols, readbytes(f, chunking * header.recordlength), info,
+    parserecords!(cols, read(f, chunking * header.recordlength), info,
                   header.recordlength)
   end
-  extra != 0 && parserecords!(cols, readbytes(f, extra * header.recordlength),
+  extra != 0 && parserecords!(cols, read(f, extra * header.recordlength),
                               info, header.recordlength)
 
   d = Dict()
